@@ -8,19 +8,25 @@
     "dev": "cd frontend && vite",
     "build": "cd frontend && vite build",
     "test": "cd frontend && vitest run",
+    "test:backend": "vitest run test/backend.test.js",
     "lint": "eslint frontend/",
     "preview": "cd frontend && vite preview"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@react-google-maps/api": "^2.20.8",
+    "compression": "^1.8.1",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
     "firebase": "^12.12.0",
+    "helmet": "^8.1.0",
     "lucide-react": "^1.8.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router-dom": "^7.14.1"
+    "react-router-dom": "^7.14.1",
+    "xss-clean": "^0.1.4",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -34,7 +40,9 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "jsdom": "^29.0.2",
+    "supertest": "^7.2.2",
     "vite": "^8.0.4",
+    "vite-plugin-compression": "^0.5.1",
     "vitest": "^4.1.4"
   }
 }

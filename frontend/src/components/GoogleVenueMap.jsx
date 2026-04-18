@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, OverlayView } from '@react-google-maps/api';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { GoogleMap, useJsApiLoader, OverlayView, HeatmapLayer } from '@react-google-maps/api';
 import { subscribeToVenueStatus } from '../services/firestoreSync';
 
 // Coordinates for London Stadium (center)
 const center = { lat: 51.5387, lng: -0.0166 };
-const mapContainerStyle = { width: '100%', height: '300px', borderRadius: '12px' };
+const mapContainerStyle = { width: '100%', height: '400px', borderRadius: '12px' };
+
+const libraries = ['visualization'];
 
 // Dummy geographical mapping for the sections
 const GEO_MAPPING = {
@@ -18,54 +20,69 @@ const GEO_MAPPING = {
 const GoogleVenueMap = () => {
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: "YOUR_GOOGLE_MAPS_API_KEY", // Will show Developer Mode without key
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "YOUR_GOOGLE_MAPS_API_KEY",
+    libraries
   });
 
   const [data, setData] = useState([]);
-  const [map, setMap] = useState(null);
+  const [showHeatmap, setShowHeatmap] = useState(true);
 
   useEffect(() => {
     const unsubscribe = subscribeToVenueStatus(setData);
     return () => unsubscribe();
   }, []);
 
-  const onLoad = useCallback(function callback(map) {
-    // Restrict bounds loosely around the stadium
-    const bounds = new window.google.maps.LatLngBounds(center);
-    map.fitBounds(bounds);
-    map.setZoom(17);
-    setMap(map);
-  }, []);
-
-  const onUnmount = useCallback(function callback(map) {
-    setMap(null);
-  }, []);
+  // Transform area data into heatmap points
+  const heatmapData = useMemo(() => {
+    if (!window.google || !isLoaded) return [];
+    return data.map(area => {
+      const pos = GEO_MAPPING[area.id] || center;
+      return {
+        location: new window.google.maps.LatLng(pos.lat, pos.lng),
+        weight: Math.max(1, area.density * 10) // Scale density for visibility
+      };
+    });
+  }, [data, isLoaded]);
 
   const getDensityColor = (density) => {
-    if (density > 0.7) return 'rgba(239, 68, 68, 0.8)'; // Danger
-    if (density > 0.4) return 'rgba(245, 158, 11, 0.8)'; // Warning
-    return 'rgba(16, 185, 129, 0.8)'; // Success
+    if (density > 0.7) return 'rgba(239, 68, 68, 0.9)'; // Danger
+    if (density > 0.4) return 'rgba(245, 158, 11, 0.9)'; // Warning
+    return 'rgba(16, 185, 129, 0.9)'; // Success
   };
 
-  if (!isLoaded) return <div className="glass-card animate-in">Loading Map...</div>;
+  if (!isLoaded) return <div className="glass-card animate-in">Loading Premium Maps...</div>;
 
   return (
-    <div className="glass-card animate-in" style={{ padding: '16px' }}>
-      <h3 style={{ marginBottom: '16px' }}>Interactive Venue Map</h3>
-      <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden' }}>
+    <section className="glass-card animate-in" style={{ padding: '16px' }} aria-labelledby="map-title">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <h3 id="map-title">Interactive Control Room Map</h3>
+        <button 
+          onClick={() => setShowHeatmap(!showHeatmap)}
+          className="auth-button"
+          style={{ width: 'auto', padding: '6px 12px', fontSize: '0.75rem', marginTop: 0 }}
+          aria-pressed={showHeatmap}
+        >
+          {showHeatmap ? 'Hide Heatmap' : 'Show Heatmap'}
+        </button>
+      </div>
+      
+      <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
         <GoogleMap
           mapContainerStyle={mapContainerStyle}
           center={center}
-          zoom={16}
-          onLoad={onLoad}
-          onUnmount={onUnmount}
+          zoom={17}
           options={{
-            disableDefaultUI: true,
-            mapTypeId: 'satellite', // Premium look
-            tilt: 45 // 3D effect
+            disableDefaultUI: false,
+            mapTypeId: 'satellite',
+            tilt: 45,
+            styles: [
+              { featureType: "all", elementType: "labels", stylers: [{ visibility: "off" }] }
+            ]
           }}
         >
-          {/* Custom Heatmap/Density Overlay Markers */}
+          {showHeatmap && <HeatmapLayer data={heatmapData} options={{ radius: 40, opacity: 0.6 }} />}
+
+          {/* Real-time Status Markers */}
           {data.map(area => {
             const position = GEO_MAPPING[area.id] || center;
             return (
@@ -74,27 +91,37 @@ const GoogleVenueMap = () => {
                 position={position}
                 mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
               >
-                <div style={{
-                  position: 'absolute',
-                  transform: 'translate(-50%, -50%)',
-                  background: getDensityColor(area.density),
-                  color: 'white',
-                  padding: '4px 8px',
-                  borderRadius: '12px',
-                  fontSize: '0.7rem',
-                  fontWeight: 'bold',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                  whiteSpace: 'nowrap',
-                  backdropFilter: 'blur(4px)'
-                }}>
-                  {area.name} <br/> {area.waitTime}m Wait
+                <div 
+                  role="status"
+                  aria-label={`${area.name}: ${area.waitTime} minutes wait, ${Math.round(area.density * 100)}% density`}
+                  style={{
+                    position: 'absolute',
+                    transform: 'translate(-50%, -120%)',
+                    background: getDensityColor(area.density),
+                    color: 'white',
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    fontSize: '0.75rem',
+                    fontWeight: 'bold',
+                    boxShadow: '0 8px 16px rgba(0,0,0,0.6)',
+                    whiteSpace: 'nowrap',
+                    backdropFilter: 'blur(8px)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    zIndex: 10
+                  }}
+                >
+                  <div style={{ borderBottom: '1px solid rgba(255,255,255,0.2)', paddingBottom: '2px', marginBottom: '2px' }}>{area.name}</div>
+                  <div style={{ opacity: 0.9 }}>Wait: {area.waitTime}m</div>
                 </div>
               </OverlayView>
             );
           })}
         </GoogleMap>
       </div>
-    </div>
+      <p style={{ marginTop: '12px', fontSize: '0.75rem', opacity: 0.6 }}>
+        * Real-time thermal crowd analysis powered by StadiumSync edge sensors.
+      </p>
+    </section>
   );
 };
 

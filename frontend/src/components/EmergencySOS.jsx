@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { triggerSOSAlert } from '../services/crowdSimulation';
 import { ShieldAlert } from 'lucide-react';
 
-const EmergencySOS = () => {
+const EmergencySOS = React.memo(() => {
   const [active, setActive] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -22,11 +22,11 @@ const EmergencySOS = () => {
   };
 
   return (
-    <div className="glass-card animate-in" style={{ animationDelay: '0.3s', borderLeft: '4px solid var(--danger)' }}>
+    <section className="glass-card animate-in" style={{ animationDelay: '0.3s', borderLeft: '4px solid var(--danger)' }} aria-labelledby="sos-title">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h3 style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <ShieldAlert size={20} /> Emergency SOS
+          <h3 id="sos-title" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ShieldAlert size={20} aria-hidden="true" /> Emergency SOS
           </h3>
           <p style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '4px' }}>Immediate medical or security assistance.</p>
         </div>
@@ -48,17 +48,20 @@ const EmergencySOS = () => {
           }}
           onClick={triggerSOS}
           disabled={loading}
-          aria-label="Trigger SOS"
+          aria-label={loading ? 'Sending SOS' : 'Trigger SOS'}
         >
-          <ShieldAlert size={32} color="white" />
+          <ShieldAlert size={32} color="white" aria-hidden="true" />
         </button>
       </div>
       
-      {active && (
-        <div style={{ marginTop: '16px', color: 'var(--danger)', fontWeight: 700, textAlign: 'center', fontSize: '0.9rem', background: 'rgba(239, 68, 68, 0.1)', padding: '8px', borderRadius: '8px' }}>
-          ⚠️ ALERT SENT. SECURITY DISPATCHED.
-        </div>
-      )}
+      {/* aria-live assertive ensures this is read immediately over everything else */}
+      <div aria-live="assertive">
+        {active && (
+          <div role="alert" style={{ marginTop: '16px', color: 'var(--danger)', fontWeight: 700, textAlign: 'center', fontSize: '0.9rem', background: 'rgba(239, 68, 68, 0.1)', padding: '8px', borderRadius: '8px' }}>
+            ⚠️ ALERT SENT. SECURITY DISPATCHED.
+          </div>
+        )}
+      </div>
 
       <style>{`
         .sos-active {
@@ -69,8 +72,8 @@ const EmergencySOS = () => {
           to { transform: scale(1.1); box-shadow: 0 0 30px rgba(239, 68, 68, 0.8); }
         }
       `}</style>
-    </div>
+    </section>
   );
-};
+});
 
 export default EmergencySOS;
