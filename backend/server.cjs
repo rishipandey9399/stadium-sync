@@ -20,9 +20,30 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://maps.googleapis.com", "https://apis.google.com"],
-      connectSrc: ["'self'", "https://maps.googleapis.com", "https://*.firebaseio.com", "https://*.googleapis.com"],
-      imgSrc: ["'self'", "data:", "https://maps.gstatic.com", "https://maps.googleapis.com", "https://*.google.com", "https://*.ggpht.com"],
+      scriptSrc: [
+        "'self'", 
+        "'unsafe-inline'", 
+        "https://maps.googleapis.com", 
+        "https://apis.google.com",
+        "https://www.googletagmanager.com"
+      ],
+      connectSrc: [
+        "'self'", 
+        "https://maps.googleapis.com", 
+        "https://*.firebaseio.com", 
+        "https://*.googleapis.com",
+        "https://www.google-analytics.com",
+        "https://*.google-analytics.com"
+      ],
+      imgSrc: [
+        "'self'", 
+        "data:", 
+        "https://maps.gstatic.com", 
+        "https://maps.googleapis.com", 
+        "https://*.google.com", 
+        "https://*.ggpht.com",
+        "https://www.google-analytics.com"
+      ],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://maps.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       frameSrc: ["'self'", "https://*.firebaseapp.com", "https://*.google.com"],

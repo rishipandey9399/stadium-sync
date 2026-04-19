@@ -1,0 +1,14 @@
+node_modules
+frontend/node_modules
+frontend/dist
+.git
+.DS_Store
+*.log
+npm-debug.log*
+.env
+.npm
+test
+frontend/src/test
+Dockerfile
+.dockerignore
+submission.zip
