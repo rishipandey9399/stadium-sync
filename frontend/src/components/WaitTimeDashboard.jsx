@@ -1,20 +1,54 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { subscribeToVenueStatus } from '../services/firestoreSync';
+import { getLiveWaitTimes } from '../services/crowdSimulation';
 import { Clock, MapPin, Navigation, Coffee } from 'lucide-react';
 
+/**
+ * Maps area type to icon component.
+ * @param {string} type - Area type ('food' | 'gate' | 'attraction').
+ * @returns {JSX.Element}
+ */
+const AreaIcon = ({ type }) => {
+  switch (type) {
+    case 'food': return <Coffee size={16} aria-hidden="true" />;
+    default: return <MapPin size={16} aria-hidden="true" />;
+  }
+};
+
+/**
+ * WaitTimeDashboard Component
+ *
+ * Displays real-time crowd wait times for key stadium areas.
+ * Subscribes to Firestore for live updates; falls back to the REST API
+ * if Firestore returns no data (e.g. empty collection on first load).
+ *
+ * @component
+ * @returns {JSX.Element}
+ */
 const WaitTimeDashboard = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const handleRouteToShortest = useCallback(() => {
+    if (data.length === 0) return;
+    const shortest = [...data].sort((a, b) => a.waitTime - b.waitTime)[0];
+    // Would integrate with Google Maps Directions API in production
+    console.info(`[WaitTimeDashboard] Navigate to: ${shortest.name} (${shortest.waitTime}m wait)`);
+  }, [data]);
+
   useEffect(() => {
-    // The component subscribes once on mount and rerenders automatically
-    // when Firestore pushes new data.
-    const unsubscribe = subscribeToVenueStatus((newData) => {
-      setData(newData);
-      setLoading(false);
+    const unsubscribe = subscribeToVenueStatus(async (newData) => {
+      if (newData && newData.length > 0) {
+        setData(newData);
+        setLoading(false);
+      } else {
+        // Firestore returned empty – fall back to REST API data
+        const apiData = await getLiveWaitTimes();
+        setData(apiData);
+        setLoading(false);
+      }
     });
 
-    // Cleanup subscription on unmount
     return () => unsubscribe();
   }, []);
 
@@ -27,47 +61,66 @@ const WaitTimeDashboard = () => {
   if (loading) {
     return (
       <div className="glass-card animate-in" style={{ animationDelay: '0.1s' }}>
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Clock size={20} color="var(--primary)" /> Wait Times
+        <h3 className="wait-time-title">
+          <Clock size={20} color="var(--primary)" aria-hidden="true" />
+          Wait Times
         </h3>
-        <p style={{ marginTop: '16px', opacity: 0.7 }}>Loading live data from Firestore...</p>
+        <p className="wait-time-loading" role="status" aria-live="polite">
+          Loading live data from Firestore...
+        </p>
       </div>
     );
   }
 
+  const sortedData = [...data].sort((a, b) => a.waitTime - b.waitTime);
+
   return (
-    <div className="glass-card animate-in" style={{ animationDelay: '0.1s' }}>
-      <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <Clock size={20} color="var(--primary)" /> Live Wait Times
+    <div
+      className="glass-card animate-in"
+      style={{ animationDelay: '0.1s' }}
+      role="region"
+      aria-labelledby="wait-time-heading"
+    >
+      <h3 id="wait-time-heading" className="wait-time-title">
+        <Clock size={20} color="var(--primary)" aria-hidden="true" />
+        Live Wait Times
       </h3>
-      
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '20px' }}>
-        {data.sort((a, b) => a.waitTime - b.waitTime).map(area => (
-          <div key={area.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '12px', borderBottom: '1px solid var(--glass-border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '8px' }}>
-                {area.type === 'food' ? <Coffee size={16} /> : <MapPin size={16} />}
+
+      <ul className="wait-time-list" aria-label="Stadium area wait times">
+        {sortedData.map((area) => (
+          <li
+            key={area.id}
+            className="wait-time-item"
+            aria-label={`${area.name}: ${area.waitTime} minute wait`}
+          >
+            <div className="wait-time-area">
+              <div className="wait-time-icon-wrap">
+                <AreaIcon type={area.type} />
               </div>
               <div>
-                <div style={{ fontWeight: 600 }}>{area.name}</div>
-                <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>{area.type === 'food' ? 'Concessions' : 'Entrance'}</div>
+                <div className="wait-time-name">{area.name}</div>
+                <div className="wait-time-type">
+                  {area.type === 'food' ? 'Concessions' : 'Entrance'}
+                </div>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className={`status-badge ${getStatusClass(area.waitTime)}`}>
+            <div>
+              <span className={`status-badge ${getStatusClass(area.waitTime)}`}>
                 {area.waitTime} MIN
-              </div>
+              </span>
             </div>
-          </div>
+          </li>
         ))}
-      </div>
-      
-      <button 
+      </ul>
+
+      <button
         className="auth-button"
         style={{ marginTop: '20px' }}
-        onClick={() => alert('Finding fastest route...')}
+        onClick={handleRouteToShortest}
+        aria-label="Find and navigate to the area with the shortest wait time"
       >
-        <Navigation size={18} /> Route to Shortest
+        <Navigation size={18} aria-hidden="true" />
+        Route to Shortest
       </button>
     </div>
   );

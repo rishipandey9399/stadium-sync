@@ -1,15 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Ticket, LogIn, UserPlus } from 'lucide-react';
+import { trackAuth } from '../services/analyticsService';
 
+/**
+ * Auth Page — Login & Sign Up
+ *
+ * Handles both email/password and Google Sign-In flows via Firebase Auth.
+ * Tracks auth events via GA4 and provides full keyboard & screen-reader support.
+ *
+ * @component
+ * @returns {JSX.Element}
+ */
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, signup } = useAuth();
+  const errorRef = useRef(null);
+  const { login, signup, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -20,87 +31,130 @@ const Auth = () => {
     try {
       if (isLogin) {
         await login(email, password);
+        trackAuth('login', 'email');
       } else {
         await signup(email, password);
+        trackAuth('sign_up', 'email');
       }
       navigate('/dashboard');
     } catch (err) {
-      setError(err.message || 'Failed to authenticate.');
+      const message = err.message || 'Failed to authenticate.';
+      setError(message);
+      // Move focus to error for screen readers
+      setTimeout(() => errorRef.current?.focus(), 50);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const handleGoogleSignIn = () => {
-    // Note: Use actual firebase signInWithPopup(auth, googleProvider) in production
-    setError("Google Identity integration is in simulated mode for this preview environment.");
-    setTimeout(() => setError(""), 3000);
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await loginWithGoogle();
+      trackAuth('login', 'google');
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err.message || 'Google Sign-In failed. Please try again.');
+      setTimeout(() => errorRef.current?.focus(), 50);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="auth-container">
       <div className="glass-card auth-card animate-in">
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
-            <div style={{ background: 'var(--primary)', padding: '16px', borderRadius: '50%', boxShadow: '0 0 30px rgba(59, 130, 246, 0.4)' }}>
-              <Ticket size={32} color="white" />
-            </div>
+        <div className="auth-logo-wrap">
+          <div className="auth-logo-icon" aria-hidden="true">
+            <Ticket size={32} color="white" />
           </div>
-          <h1 className="gradient-text" style={{ fontSize: '2.5rem' }}>StadiumSync</h1>
-          <p style={{ opacity: 0.8, marginTop: '8px', fontWeight: 500 }}>Premium Venue Logistics.</p>
+          <h1 className="gradient-text auth-headline">StadiumSync</h1>
+          <p className="auth-tagline">Premium Venue Logistics.</p>
         </div>
 
-        {error && <div className="auth-error" role="alert">{error}</div>}
+        {error && (
+          <div
+            ref={errorRef}
+            className="auth-error"
+            role="alert"
+            aria-live="assertive"
+            tabIndex={-1}
+          >
+            {error}
+          </div>
+        )}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }} aria-labelledby="auth-form-title">
-          <h2 id="auth-form-title" style={{ display: 'none' }}>{isLogin ? "Login" : "Sign Up"}</h2>
-          <div>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', opacity: 0.9, fontWeight: 600 }}>Email Address</label>
-            <input 
-              type="email" 
+        <form
+          onSubmit={handleSubmit}
+          className="auth-form"
+          aria-labelledby="auth-form-title"
+          noValidate
+        >
+          <h2 id="auth-form-title" className="sr-only">
+            {isLogin ? 'Login' : 'Sign Up'}
+          </h2>
+
+          <div className="form-group">
+            <label htmlFor="email-input" className="form-label">
+              Email Address
+            </label>
+            <input
+              id="email-input"
+              type="email"
               className="auth-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
               placeholder="fan@stadium.com"
+              aria-required="true"
             />
           </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', opacity: 0.9, fontWeight: 600 }}>Security Password</label>
-            <input 
-              type="password" 
+
+          <div className="form-group">
+            <label htmlFor="password-input" className="form-label">
+              Password
+            </label>
+            <input
+              id="password-input"
+              type="password"
               className="auth-input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              autoComplete={isLogin ? "current-password" : "new-password"}
+              autoComplete={isLogin ? 'current-password' : 'new-password'}
               placeholder="••••••••"
+              aria-required="true"
+              minLength={6}
             />
           </div>
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className="auth-button"
             disabled={loading}
+            aria-busy={loading}
           >
-            {isLogin ? <LogIn size={20} /> : <UserPlus size={20} />}
-            {loading ? 'Processing Securely...' : (isLogin ? 'Log In to StadiumSync' : 'Create My Account')}
+            {isLogin ? <LogIn size={20} aria-hidden="true" /> : <UserPlus size={20} aria-hidden="true" />}
+            {loading ? 'Processing Securely...' : isLogin ? 'Log In to StadiumSync' : 'Create My Account'}
           </button>
         </form>
 
-        <div style={{ margin: '24px 0', display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ flex: 1, height: '1px', background: 'var(--glass-border)' }}></div>
-          <span style={{ fontSize: '0.8rem', opacity: 0.5, fontWeight: 700 }}>OR</span>
-          <div style={{ flex: 1, height: '1px', background: 'var(--glass-border)' }}></div>
+        <div className="auth-divider" role="separator" aria-hidden="true">
+          <div className="auth-divider-line" />
+          <span className="auth-divider-text">OR</span>
+          <div className="auth-divider-line" />
         </div>
 
-        {/* Google Identity Integration Point */}
-        <button 
+        <button
           onClick={handleGoogleSignIn}
-          className="auth-button"
-          style={{ background: 'white', color: '#1f2937', marginTop: 0 }}
+          className="google-signin-button"
+          disabled={loading}
+          aria-label="Continue with Google"
+          type="button"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24">
+          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
             <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
             <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
@@ -109,14 +163,15 @@ const Auth = () => {
           Continue with Google
         </button>
 
-        <div style={{ marginTop: '32px', textAlign: 'center', fontSize: '0.95rem' }}>
-          <p style={{ opacity: 0.8 }}>
-            {isLogin ? "New to the platform? " : "Already have an account? "}
-            <button 
+        <div className="auth-switch">
+          <p>
+            {isLogin ? 'New to the platform? ' : 'Already have an account? '}
+            <button
               onClick={() => setIsLogin(!isLogin)}
-              style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: '800', cursor: 'pointer', padding: 0 }}
+              className="auth-switch-btn"
+              type="button"
             >
-              {isLogin ? "Register Now" : "Back to Login"}
+              {isLogin ? 'Register Now' : 'Back to Login'}
             </button>
           </p>
         </div>

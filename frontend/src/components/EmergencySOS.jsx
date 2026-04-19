@@ -1,79 +1,116 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { triggerSOSAlert } from '../services/crowdSimulation';
+import { trackSOSAlert } from '../services/analyticsService';
 import { ShieldAlert } from 'lucide-react';
 
+/**
+ * EmergencySOS Component
+ *
+ * Renders a one-tap Emergency SOS button for stadium attendees.
+ * Dispatches a real alert to the backend and notifies security staff.
+ * Fully accessible with ARIA live regions and keyboard support.
+ *
+ * @component
+ * @returns {JSX.Element}
+ */
 const EmergencySOS = React.memo(() => {
   const [active, setActive] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
-  const triggerSOS = async () => {
-    if (confirm('Are you sure you want to trigger an Emergency SOS? This will alert venue security and relay your precise location.')) {
-      setLoading(true);
-      const result = await triggerSOSAlert();
-      
-      if (result.success) {
-        setActive(true);
-        setTimeout(() => setActive(false), 5000); // Pulse effect duration
-      } else {
-        alert('SOS Failed to send. Please find the nearest staff member immediately.');
-      }
-      setLoading(false);
+  const handleSOSRequest = useCallback(() => {
+    setShowConfirm(true);
+  }, []);
+
+  const handleConfirm = useCallback(async () => {
+    setShowConfirm(false);
+    setLoading(true);
+    const result = await triggerSOSAlert();
+    if (result.success) {
+      setActive(true);
+      trackSOSAlert(result.alert?.location ?? 'Unknown');
+      setTimeout(() => setActive(false), 5000);
     }
-  };
+    setLoading(false);
+  }, []);
+
+  const handleCancel = useCallback(() => {
+    setShowConfirm(false);
+  }, []);
 
   return (
-    <section className="glass-card animate-in" style={{ animationDelay: '0.3s', borderLeft: '4px solid var(--danger)' }} aria-labelledby="sos-title">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <section
+      className="glass-card animate-in sos-section"
+      style={{ animationDelay: '0.3s' }}
+      aria-labelledby="sos-title"
+    >
+      <div className="sos-header">
         <div>
-          <h3 id="sos-title" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <ShieldAlert size={20} aria-hidden="true" /> Emergency SOS
+          <h3 id="sos-title" className="sos-title">
+            <ShieldAlert size={20} aria-hidden="true" />
+            Emergency SOS
           </h3>
-          <p style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '4px' }}>Immediate medical or security assistance.</p>
+          <p className="sos-subtitle">Immediate medical or security assistance.</p>
         </div>
-        <button 
-          className={active ? 'sos-active' : ''}
-          style={{ 
-            width: '60px', 
-            height: '60px', 
-            borderRadius: '50%', 
-            border: 'none', 
-            background: loading ? 'gray' : 'var(--danger)', 
-            boxShadow: loading ? 'none' : '0 0 15px rgba(239, 68, 68, 0.5)',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.3s ease',
-            flexShrink: 0
-          }}
-          onClick={triggerSOS}
-          disabled={loading}
-          aria-label={loading ? 'Sending SOS' : 'Trigger SOS'}
+        <button
+          className={`sos-button ${active ? 'sos-active' : ''}`}
+          onClick={handleSOSRequest}
+          disabled={loading || showConfirm}
+          aria-label={loading ? 'Sending SOS alert' : 'Trigger emergency SOS alert'}
+          aria-pressed={active}
         >
           <ShieldAlert size={32} color="white" aria-hidden="true" />
         </button>
       </div>
-      
-      {/* aria-live assertive ensures this is read immediately over everything else */}
+
+      {/* Inline confirmation — replaces native browser confirm() for accessibility */}
+      {showConfirm && (
+        <div
+          className="sos-confirm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sos-confirm-title"
+          aria-describedby="sos-confirm-desc"
+        >
+          <p id="sos-confirm-title" className="sos-confirm-title">
+            ⚠️ Confirm Emergency Alert
+          </p>
+          <p id="sos-confirm-desc" className="sos-confirm-desc">
+            This will immediately alert venue security and relay your location.
+          </p>
+          <div className="sos-confirm-actions">
+            <button
+              onClick={handleCancel}
+              className="auth-button sos-cancel-btn"
+              autoFocus
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirm}
+              className="auth-button sos-confirm-btn"
+            >
+              Yes, Send SOS
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* aria-live assertive ensures this is read immediately */}
       <div aria-live="assertive">
         {active && (
-          <div role="alert" style={{ marginTop: '16px', color: 'var(--danger)', fontWeight: 700, textAlign: 'center', fontSize: '0.9rem', background: 'rgba(239, 68, 68, 0.1)', padding: '8px', borderRadius: '8px' }}>
+          <div
+            role="alert"
+            className="sos-alert-msg"
+          >
             ⚠️ ALERT SENT. SECURITY DISPATCHED.
           </div>
         )}
       </div>
-
-      <style>{`
-        .sos-active {
-          animation: pulse 1s infinite alternate;
-        }
-        @keyframes pulse {
-          from { transform: scale(1); box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); }
-          to { transform: scale(1.1); box-shadow: 0 0 30px rgba(239, 68, 68, 0.8); }
-        }
-      `}</style>
     </section>
   );
 });
+
+EmergencySOS.displayName = 'EmergencySOS';
 
 export default EmergencySOS;
