@@ -2,11 +2,19 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const config = require('../backend/config.cjs');
 const router = express.Router();
 
-// Initialize Gemini AI (with fallback for evaluation)
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "AI_KEY_FALLBACK_SIM");
+// Initialize Gemini AI
+const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
 const aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+// Simple In-Memory Cache for AI Insights (5-minute TTL)
+const aiCache = {
+  data: null,
+  timestamp: 0,
+  TTL: 5 * 60 * 1000 
+};
 
 // Rate Limiters
 const sosLimiter = rateLimit({
@@ -25,15 +33,13 @@ const queueLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Zod Schemas for Security Validation
+// Zod Schemas
 const sosSchema = z.object({
-  location: z.string().min(1).max(200).optional().default('Unknown'),
+  location: z.string().min(1).max(200).transform(str => str.replace(/<[^>]*>?/gm, '')).default('Unknown'), // Basic HTML stripping
 });
 
-// In-memory data store
+// data
 let queuePosition = 42;
-const sosLogs = [];
-
 const AREAS = [
   { id: 'north-gate', name: 'North Entrance', type: 'gate' },
   { id: 'south-gate', name: 'South Entrance', type: 'gate' },
@@ -55,15 +61,10 @@ setInterval(() => {
   if (queuePosition > 0) queuePosition--;
 }, 5000);
 
-// Basic Endpoints
-router.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+router.get('/health', (req, res) => res.json({ status: 'ok', environment: config.NODE_ENV }));
 
 router.get('/venue', (req, res) => {
-  try {
-    res.json({ success: true, areas: getDynamicWaitTimes() });
-  } catch (error) {
-    res.status(500).json({ success: false, error: "Internal Server Error" });
-  }
+  res.json({ success: true, areas: getDynamicWaitTimes() });
 });
 
 router.post('/queue/join', queueLimiter, (req, res) => {
@@ -75,58 +76,43 @@ router.get('/queue/status', (req, res) => res.json({ position: queuePosition }))
 
 router.post('/sos', sosLimiter, (req, res) => {
   try {
-    // Validate input with Zod
     const validatedData = sosSchema.parse(req.body);
-    
-    const alert = { 
-      id: Date.now(), 
-      location: validatedData.location, 
-      status: 'dispatched',
-      timestamp: new Date().toISOString()
-    };
-    
-    sosLogs.push(alert);
+    const alert = { id: Date.now(), location: validatedData.location, status: 'dispatched' };
     res.json({ success: true, alert });
   } catch (err) {
-    if (err instanceof z.ZodError) {
-      return res.status(400).json({ success: false, error: "Validation Failed", details: err.errors });
-    }
-    res.status(500).json({ success: false, error: "Internal Server Error" });
+    res.status(400).json({ success: false, error: "Validation Failed" });
   }
 });
 
 /**
- * 🧠 Real Google Generative AI integration
- * Analyzes venue data to provide predictive insights
+ * 🧠 Production Gemini Insight Engine with TTL Caching
  */
 router.get('/predictive-trends', async (req, res) => {
   try {
+    const now = Date.now();
+    // Return cached insight if valid
+    if (aiCache.data && (now - aiCache.timestamp < aiCache.TTL)) {
+      return res.json({ success: true, prediction: aiCache.data, cached: true });
+    }
+
     const venueData = getDynamicWaitTimes();
     const prompt = `Analyze this stadium venue data and provide a 1-sentence predictive insight and a 1-sentence recommendation for staff.
     Data: ${JSON.stringify(venueData)}
     Format response as JSON: { "insight": "...", "recommendation": "...", "confidenceScore": 0.95 }`;
 
-    let result;
-    if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "AI_KEY_FALLBACK_SIM") {
-      const response = await aiModel.generateContent(prompt);
-      const text = response.response.text();
-      // Basic JSON cleaning if Gemini wraps it in code blocks
-      const cleanJson = text.replace(/```json|```/g, '').trim();
-      result = JSON.parse(cleanJson);
-    } else {
-      // High-quality fallback for evaluation if no key is present
-      const busyArea = venueData.sort((a, b) => b.density - a.density)[0];
-      result = {
-        insight: `Predictive analysis suggests a bottle-neck forming at ${busyArea.name} with ${Math.round(busyArea.density * 100)}% density.`,
-        recommendation: `Deploy 2 additional stewards to ${busyArea.name} immediately to facilitate crowd flow.`,
-        confidenceScore: 0.92
-      };
-    }
+    const response = await aiModel.generateContent(prompt);
+    const text = response.response.text();
+    const cleanJson = text.replace(/```json|```/g, '').trim();
+    const result = JSON.parse(cleanJson);
 
-    res.json({ success: true, prediction: result });
+    // Update Cache
+    aiCache.data = result;
+    aiCache.timestamp = now;
+
+    res.json({ success: true, prediction: result, cached: false });
   } catch (error) {
-    console.error("Gemini Error:", error);
-    res.status(500).json({ success: false, error: "AI Insight Unavailable" });
+    console.error("Gemini Production Error:", error);
+    res.status(503).json({ success: false, error: "AI Prediction Service Temporarily Unavailable" });
   }
 });
 

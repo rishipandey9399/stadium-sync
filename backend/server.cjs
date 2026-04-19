@@ -3,13 +3,19 @@ const cors = require('cors');
 const path = require('path');
 const helmet = require('helmet');
 const compression = require('compression');
+const morgan = require('morgan');
+const config = require('./config.cjs');
 const apiRoutes = require('../services/apiRoutes.cjs');
 
 const app = express();
-const PORT = process.env.PORT || 8080; 
+const PORT = config.PORT || 8080; 
 
 // Middleware
-// Security: Harden Helmet with restrictive CSP but allow Maps/Firebase
+// Production Logging: JSON for Cloud Run / Morgan for dev
+const logFormat = config.NODE_ENV === 'production' ? 'combined' : 'dev';
+app.use(morgan(logFormat));
+
+// Security: Harden Helmet with restrictive CSP
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -22,12 +28,12 @@ app.use(helmet({
       frameSrc: ["'self'", "https://*.firebaseapp.com", "https://*.google.com"],
     },
   },
-  crossOriginEmbedderPolicy: false, // Required for Google Maps/Firebase
+  crossOriginEmbedderPolicy: false,
 }));
 
-app.use(compression()); // Efficiency: Gzip responses
+app.use(compression());
 app.use(cors());
-app.use(express.json({ limit: '10kb' })); // Security: Limit body size
+app.use(express.json({ limit: '10kb' }));
 
 // Set up API routes
 app.use('/api', apiRoutes);
@@ -38,20 +44,19 @@ app.use(express.static(distPath));
 
 // React Catch-all
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api')) {
-    return next();
-  }
+  if (req.path.startsWith('/api')) return next();
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-// Global Error Handler (Security: No stack trace leaks)
+// Global Error Handler
 app.use((err, req, res, next) => {
-  console.error("Unhandeled Error:", err.stack);
+  const isProd = config.NODE_ENV === 'production';
+  console.error(`[ERROR] ${new Date().toISOString()}:`, err.stack);
   res.status(500).json({ 
     success: false, 
-    error: "Internal Server Error",
-    message: process.env.NODE_ENV === 'production' ? 'An unexpected error occurred' : err.message
+    error: isProd ? "Internal Server Error" : err.message,
+    requestId: req.headers['x-cloud-trace-context'] || 'local'
   });
 });
 
-app.listen(PORT, () => console.log(`🏟️ StadiumSync Monolith running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 StadiumSync Production Monolith running on port ${PORT}`));
